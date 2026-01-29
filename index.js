@@ -5,12 +5,15 @@ const bcrypt = require('bcryptjs');
 const cors = require('cors');
 
 const app = express();
+
+// --- MIDDLEWARES ---
 app.use(express.json());
 app.use(cors());
 
-// --- CONFIGURACIÓN ---
+// --- CONFIGURACIÓN DE VARIABLES ---
+// Nota: En producción, usa variables de entorno (process.env)
 const MONGO_URI = "mongodb+srv://jhonatandavidcastrogalviz_db_user:78simon87@cluster0.bohtlpq.mongodb.net/FashionCraftDB?retryWrites=true&w=majority";
-const JWT_SECRET = "78simon87_fashion_secret_key_2026"; // Firma para tokens
+const JWT_SECRET = "78simon87_fashion_secret_key_2026"; 
 
 // --- CONEXIÓN A BASE DE DATOS ---
 mongoose.connect(MONGO_URI)
@@ -19,17 +22,17 @@ mongoose.connect(MONGO_URI)
 
 // --- MODELOS DE DATOS ---
 
-// Usuario (Sastre/Taller)
+// Esquema de Usuario (Sastre/Taller)
 const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   nombreTaller: String,
-  fontSize: { type: Number, default: 16 } // Preferencia de tamaño de letra
+  fontSize: { type: Number, default: 16 } 
 });
 
-// Orden de Trabajo (La "Card")
+// Esquema de Orden de Trabajo (La "Card")
 const OrderSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Aislamiento de datos
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   cliente: {
     nombre: String,
     telefono: String
@@ -37,8 +40,8 @@ const OrderSchema = new mongoose.Schema({
   prenda: {
     tipo: String,
     medidas: Object, // Tallas exactas (JSON flexible)
-    descripcion: String, // Especificaciones: costuras, hilos, etc.
-    previsualizacion: String // URL de imagen o boceto
+    descripcion: String, // Especificaciones técnicas
+    previsualizacion: String 
   },
   gestion: {
     valor: Number,
@@ -50,7 +53,7 @@ const OrderSchema = new mongoose.Schema({
 const User = mongoose.model('User', UserSchema);
 const Order = mongoose.model('Order', OrderSchema);
 
-// --- MIDDLEWARE DE SEGURIDAD ---
+// --- MIDDLEWARE DE SEGURIDAD (JWT) ---
 const auth = (req, res, next) => {
   const token = req.header('x-auth-token');
   if (!token) return res.status(401).json({ msg: 'Acceso denegado. No hay token.' });
@@ -65,7 +68,7 @@ const auth = (req, res, next) => {
 
 // --- RUTAS DE AUTENTICACIÓN ---
 
-// Registro de nuevo sastre
+// Registro de Usuario
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, nombreTaller } = req.body;
   try {
@@ -81,7 +84,7 @@ app.post('/api/auth/register', async (req, res) => {
   } catch (err) { res.status(500).send('Error en servidor'); }
 });
 
-// Login con sesión persistente (7 días)
+// Login con Sesión Persistente (7 días)
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -91,7 +94,6 @@ app.post('/api/auth/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
-    // El token dura 7 días para que no se cierre la sesión al salir
     const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ 
       token, 
@@ -100,15 +102,15 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) { res.status(500).send('Error en servidor'); }
 });
 
-// --- RUTAS DE ÓRDENES (GRID / CARDS) ---
+// --- RUTAS DE ÓRDENES (CRUD) ---
 
-// Obtener todas las órdenes de EL usuario logueado (Buscador integrado)
+// Obtener órdenes del usuario logueado + Buscador Robusto
 app.get('/api/orders', auth, async (req, res) => {
   const { search } = req.query;
   let query = { userId: req.user.id };
   
   if (search) {
-    query["cliente.nombre"] = { $regex: search, $options: 'i' }; // Buscador por nombre
+    query["cliente.nombre"] = { $regex: search, $options: 'i' }; 
   }
 
   try {
@@ -117,7 +119,7 @@ app.get('/api/orders', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Error al obtener órdenes'); }
 });
 
-// Crear nueva orden (Agregar contenido)
+// Crear nueva orden
 app.post('/api/orders', auth, async (req, res) => {
   try {
     const newOrder = new Order({
@@ -129,7 +131,7 @@ app.post('/api/orders', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Error al guardar'); }
 });
 
-// Actualizar o Finalizar trabajo (Para generar factura después)
+// Actualizar o Finalizar trabajo
 app.put('/api/orders/:id', auth, async (req, res) => {
   try {
     const order = await Order.findOneAndUpdate(
@@ -149,15 +151,14 @@ app.delete('/api/orders/:id', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Error al eliminar'); }
 });
 
-// --- RUTA PARA FACTURA (RESUMEN) ---
+// Datos para Factura
 app.get('/api/orders/:id/invoice', auth, async (req, res) => {
   try {
     const order = await Order.findOne({ _id: req.params.id, userId: req.user.id });
     if (!order) return res.status(404).json({ msg: 'No encontrada' });
     
-    // Aquí devuelves la data lista para el PDF en el frontend
     res.json({
-      taller: "Información de tu taller",
+      taller: "Información de su taller",
       cliente: order.cliente,
       trabajo: order.prenda,
       total: order.gestion.valor,
@@ -166,6 +167,9 @@ app.get('/api/orders/:id/invoice', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Error al procesar factura'); }
 });
 
-// --- INICIO DEL SERVIDOR ---
+// --- INICIO DEL SERVIDOR (CONFIGURACIÓN PARA RENDER) ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Servidor en ejecución en puerto ${PORT}`));
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor robusto activo en el puerto ${PORT}`);
+});
